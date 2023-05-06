@@ -12,6 +12,14 @@ type builder struct {
 	tableName string
 }
 
+func (b *builder) buildPredicates(ps []Predicate) error {
+	p := ps[0]
+	for i := 1; i < len(ps); i++ {
+		p.And(ps[i])
+	}
+	return b.buildExpression(p)
+}
+
 func (b *builder) buildExpression(exp Expression) error {
 	switch expr := exp.(type) {
 	case nil:

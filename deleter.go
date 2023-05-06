@@ -24,11 +24,8 @@ func (s *Deleter[T]) Build() (*Query, error) {
 	}
 	if len(s.where) > 0 {
 		s.sb.WriteString(" WHERE ")
-		p := s.where[0]
-		for i := 1; i < len(s.where); i++ {
-			p.And(s.where[i])
-		}
-		if err := s.buildExpression(p); err != nil {
+		err = s.buildPredicates(s.where)
+		if err != nil {
 			return nil, err
 		}
 	}
