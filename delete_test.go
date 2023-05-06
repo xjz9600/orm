@@ -1,6 +1,7 @@
 package orm
 
 import (
+	"errors"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -78,6 +79,16 @@ func TestDeleter_Build(t *testing.T) {
 			wantQuery: &Query{
 				SQL: "DELETE FROM `test_model`;",
 			},
+		},
+		{
+			name:    "err basic type",
+			builder: (&Deleter[int]{}).Where(),
+			wantErr: errors.New("model: 不支持类型 int"),
+		},
+		{
+			name:    "err field",
+			builder: (&Deleter[TestModel]{}).Where(Not(C("XXX").Eq(18))),
+			wantErr: errors.New("orm: 未知字段 XXX"),
 		},
 	}
 	for _, tc := range testCase {
