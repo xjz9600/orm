@@ -11,6 +11,7 @@ func IterateFields(entity any) (map[string]any, error) {
 	}
 	typ := reflect.TypeOf(entity)
 	val := reflect.ValueOf(entity)
+	val.IsValid()
 	if val.IsZero() {
 		return nil, fmt.Errorf("不支持零值")
 	}

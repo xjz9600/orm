@@ -11,7 +11,7 @@ func (s *Deleter[T]) Build() (*Query, error) {
 		t   T
 		err error
 	)
-	s.model, err = parseModel(&t)
+	s.Model, err = s.db.r.Get(&t)
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +19,7 @@ func (s *Deleter[T]) Build() (*Query, error) {
 		s.sb.WriteString(s.tableName)
 	} else {
 		s.sb.WriteByte('`')
-		s.sb.WriteString(s.model.tableName)
+		s.sb.WriteString(s.Model.TableName)
 		s.sb.WriteByte('`')
 	}
 	if len(s.where) > 0 {
@@ -44,4 +44,10 @@ func (s *Deleter[T]) Where(ps ...Predicate) *Deleter[T] {
 func (s *Deleter[T]) From(tableName string) *Deleter[T] {
 	s.tableName = tableName
 	return s
+}
+
+func NewDeleter[T any](db *DB) *Deleter[T] {
+	return &Deleter[T]{
+		builder: builder{db: db},
+	}
 }

@@ -7,6 +7,7 @@ import (
 )
 
 func TestDeleter_Build(t *testing.T) {
+	db := memoryDB(t)
 	testCase := []struct {
 		name      string
 		builder   QueryBuilder
@@ -15,35 +16,35 @@ func TestDeleter_Build(t *testing.T) {
 	}{
 		{
 			name:    "no from ",
-			builder: &Deleter[TestModel]{},
+			builder: NewDeleter[TestModel](db),
 			wantQuery: &Query{
 				SQL: "DELETE FROM `test_model`;",
 			},
 		},
 		{
 			name:    "empty from ",
-			builder: (&Deleter[TestModel]{}).From(""),
+			builder: NewDeleter[TestModel](db).From(""),
 			wantQuery: &Query{
 				SQL: "DELETE FROM `test_model`;",
 			},
 		},
 		{
 			name:    "from",
-			builder: (&Deleter[TestModel]{}).From("`test_model`"),
+			builder: NewDeleter[TestModel](db).From("`test_Model`"),
 			wantQuery: &Query{
-				SQL: "DELETE FROM `test_model`;",
+				SQL: "DELETE FROM `test_Model`;",
 			},
 		},
 		{
 			name:    "from db",
-			builder: (&Deleter[TestModel]{}).From("`test_db`.`test_model`"),
+			builder: NewDeleter[TestModel](db).From("`test_db`.`test_Model`"),
 			wantQuery: &Query{
-				SQL: "DELETE FROM `test_db`.`test_model`;",
+				SQL: "DELETE FROM `test_db`.`test_Model`;",
 			},
 		},
 		{
 			name:    "where",
-			builder: (&Deleter[TestModel]{}).Where(C("Age").Eq(18)),
+			builder: NewDeleter[TestModel](db).Where(C("Age").Eq(18)),
 			wantQuery: &Query{
 				SQL:  "DELETE FROM `test_model` WHERE `age` = ?;",
 				Args: []any{18},
@@ -51,7 +52,7 @@ func TestDeleter_Build(t *testing.T) {
 		},
 		{
 			name:    "not where",
-			builder: (&Deleter[TestModel]{}).Where(Not(C("Age").Eq(18))),
+			builder: NewDeleter[TestModel](db).Where(Not(C("Age").Eq(18))),
 			wantQuery: &Query{
 				SQL:  "DELETE FROM `test_model` WHERE  NOT (`age` = ?);",
 				Args: []any{18},
@@ -59,7 +60,7 @@ func TestDeleter_Build(t *testing.T) {
 		},
 		{
 			name:    "and where",
-			builder: (&Deleter[TestModel]{}).Where(C("Age").Eq(18).And(C("FirstName").Eq("Tom"))),
+			builder: NewDeleter[TestModel](db).Where(C("Age").Eq(18).And(C("FirstName").Eq("Tom"))),
 			wantQuery: &Query{
 				SQL:  "DELETE FROM `test_model` WHERE (`age` = ?) AND (`first_name` = ?);",
 				Args: []any{18, "Tom"},
@@ -67,7 +68,7 @@ func TestDeleter_Build(t *testing.T) {
 		},
 		{
 			name:    "or where",
-			builder: (&Deleter[TestModel]{}).Where(C("Age").Eq(18).Or(C("FirstName").Eq("Tom"))),
+			builder: NewDeleter[TestModel](db).Where(C("Age").Eq(18).Or(C("FirstName").Eq("Tom"))),
 			wantQuery: &Query{
 				SQL:  "DELETE FROM `test_model` WHERE (`age` = ?) OR (`first_name` = ?);",
 				Args: []any{18, "Tom"},
@@ -75,19 +76,19 @@ func TestDeleter_Build(t *testing.T) {
 		},
 		{
 			name:    "empty where",
-			builder: (&Deleter[TestModel]{}).Where(),
+			builder: NewDeleter[TestModel](db).Where(),
 			wantQuery: &Query{
 				SQL: "DELETE FROM `test_model`;",
 			},
 		},
 		{
 			name:    "err basic type",
-			builder: (&Deleter[int]{}).Where(),
-			wantErr: errors.New("model: 不支持类型 int"),
+			builder: NewDeleter[int](db).Where(),
+			wantErr: errors.New("Model: 不支持类型 int"),
 		},
 		{
 			name:    "err field",
-			builder: (&Deleter[TestModel]{}).Where(Not(C("XXX").Eq(18))),
+			builder: NewDeleter[TestModel](db).Where(Not(C("XXX").Eq(18))),
 			wantErr: errors.New("orm: 未知字段 XXX"),
 		},
 	}
