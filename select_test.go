@@ -14,6 +14,116 @@ import (
 	"testing"
 )
 
+func TestSelector_Join(t *testing.T) {
+	db := memoryDB(t)
+	type Order struct {
+		Id        int
+		UsingCol1 string
+		UsingCol2 string
+	}
+
+	type OrderDetail struct {
+		OrderId int
+		ItemId  int
+
+		UsingCol1 string
+		UsingCol2 string
+	}
+
+	type Item struct {
+		Id int
+	}
+	testCases := []struct {
+		name      string
+		s         QueryBuilder
+		wantQuery *Query
+		wantErr   error
+	}{
+		{
+			name: "specify table",
+			s:    NewSelector[Order](db).From(TableOf(&OrderDetail{})),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM `order_detail`;",
+			},
+		},
+		{
+			name: "join-using",
+			s: func() QueryBuilder {
+				t1 := TableOf(&Order{})
+				t2 := TableOf(&OrderDetail{})
+				t3 := t1.Join(t2).Using("UsingCol1", "UsingCol2")
+				return NewSelector[Order](db).From(t3)
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM (`order` JOIN `order_detail` USING (`using_col1`,`using_col2`));",
+			},
+		},
+		{
+			name: "join-on",
+			s: func() QueryBuilder {
+				t1 := TableOf(&Order{}).As("t1")
+				t2 := TableOf(&OrderDetail{}).As("t2")
+				t3 := t1.Join(t2).On(t1.C("Id").EQ(t2.C("OrderId")))
+				return NewSelector[Order](db).From(t3)
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM (`order` AS `t1` JOIN `order_detail` AS `t2` ON `t1`.`id` = `t2`.`order_id`);",
+			},
+		},
+		{
+			name: "left-join",
+			s: func() QueryBuilder {
+				t1 := TableOf(&Order{}).As("t1")
+				t2 := TableOf(&OrderDetail{}).As("t2")
+				t3 := t1.LeftJoin(t2).On(t1.C("Id").EQ(t2.C("OrderId")))
+				return NewSelector[Order](db).From(t3)
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM (`order` AS `t1` LEFT JOIN `order_detail` AS `t2` ON `t1`.`id` = `t2`.`order_id`);",
+			},
+		},
+		{
+			name: "right-join",
+			s: func() QueryBuilder {
+				t1 := TableOf(&Order{}).As("t1")
+				t2 := TableOf(&OrderDetail{}).As("t2")
+				t3 := t1.RightJoin(t2).On(t1.C("Id").EQ(t2.C("OrderId")))
+				return NewSelector[Order](db).From(t3)
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM (`order` AS `t1` RIGHT JOIN `order_detail` AS `t2` ON `t1`.`id` = `t2`.`order_id`);",
+			},
+		},
+		{
+			name: "join-join",
+			s: func() QueryBuilder {
+				t1 := TableOf(&Order{}).As("t1")
+				t2 := TableOf(&OrderDetail{}).As("t2")
+				t3 := t1.Join(t2).On(t1.C("Id").EQ(t2.C("OrderId")))
+				t4 := TableOf(&Item{}).As("t4")
+				t5 := t3.Join(t4).On(t2.C("ItemId").EQ(t4.C("Id")))
+				return NewSelector[Order](db).From(t5)
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM ((`order` AS `t1` JOIN `order_detail` AS `t2` ON `t1`.`id` = `t2`.`order_id`) JOIN `item` AS `t4` ON `t2`.`item_id` = `t4`.`id`);",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := tc.s.Build()
+			assert.Equal(t, err, tc.wantErr)
+			if err != nil {
+				return
+			}
+			assert.Equal(t, q, tc.wantQuery)
+
+		})
+
+	}
+}
+
 func TestSelector_Select(t *testing.T) {
 	db := memoryDB(t)
 	testCases := []struct {
@@ -88,29 +198,8 @@ func TestSelector_Build(t *testing.T) {
 			},
 		},
 		{
-			name:    "empty from ",
-			builder: NewSelector[TestModel](db).From(""),
-			wantQuery: &Query{
-				SQL: "SELECT * FROM `test_model`;",
-			},
-		},
-		{
-			name:    "from",
-			builder: NewSelector[TestModel](db).From("`test_Model`"),
-			wantQuery: &Query{
-				SQL: "SELECT * FROM `test_Model`;",
-			},
-		},
-		{
-			name:    "from db",
-			builder: NewSelector[TestModel](db).From("`test_db`.`test_Model`"),
-			wantQuery: &Query{
-				SQL: "SELECT * FROM `test_db`.`test_Model`;",
-			},
-		},
-		{
 			name:    "where",
-			builder: NewSelector[TestModel](db).Where(C("Age").Eq(18)),
+			builder: NewSelector[TestModel](db).Where(C("Age").EQ(18)),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` WHERE `age` = ?;",
 				Args: []any{18},
@@ -118,7 +207,7 @@ func TestSelector_Build(t *testing.T) {
 		},
 		{
 			name:    "not where",
-			builder: NewSelector[TestModel](db).Where(Not(C("Age").Eq(18))),
+			builder: NewSelector[TestModel](db).Where(Not(C("Age").EQ(18))),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` WHERE  NOT (`age` = ?);",
 				Args: []any{18},
@@ -126,7 +215,7 @@ func TestSelector_Build(t *testing.T) {
 		},
 		{
 			name:    "and where",
-			builder: NewSelector[TestModel](db).Where(C("Age").Eq(18).And(C("FirstName").Eq("Tom"))),
+			builder: NewSelector[TestModel](db).Where(C("Age").EQ(18).And(C("FirstName").EQ("Tom"))),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` WHERE (`age` = ?) AND (`first_name` = ?);",
 				Args: []any{18, "Tom"},
@@ -134,7 +223,7 @@ func TestSelector_Build(t *testing.T) {
 		},
 		{
 			name:    "or where",
-			builder: NewSelector[TestModel](db).Where(C("Age").Eq(18).Or(C("FirstName").Eq("Tom"))),
+			builder: NewSelector[TestModel](db).Where(C("Age").EQ(18).Or(C("FirstName").EQ("Tom"))),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` WHERE (`age` = ?) OR (`first_name` = ?);",
 				Args: []any{18, "Tom"},
@@ -150,7 +239,7 @@ func TestSelector_Build(t *testing.T) {
 		},
 		{
 			name:    "raw expression user in predicate",
-			builder: NewSelector[TestModel](db).Where(C("Id").Eq(Raw("`age`+?", 1).AsPredicate())),
+			builder: NewSelector[TestModel](db).Where(C("Id").EQ(Raw("`age`+?", 1).AsPredicate())),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` WHERE `id` = (`age`+?);",
 				Args: []any{1},
@@ -158,7 +247,7 @@ func TestSelector_Build(t *testing.T) {
 		},
 		{
 			name:    "columns alias in where",
-			builder: NewSelector[TestModel](db).Where(C("Id").As("my_id").Eq(18)),
+			builder: NewSelector[TestModel](db).Where(C("Id").As("my_id").EQ(18)),
 			wantErr: errs.ErrAliasWhere,
 		},
 		{
@@ -184,7 +273,7 @@ func TestSelector_Build(t *testing.T) {
 		},
 		{
 			name:    "having",
-			builder: NewSelector[TestModel](db).Having(C("Id").Eq(2), C("Age").Eq(12)),
+			builder: NewSelector[TestModel](db).Having(C("Id").EQ(2), C("Age").EQ(12)),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model` HAVING (`id` = ?) AND (`age` = ?);",
 				Args: []any{2, 12},
@@ -278,22 +367,22 @@ func TestSelector_GET(t *testing.T) {
 	}{
 		{
 			name:    "invalid query",
-			s:       NewSelector[TestModel](db).Where(C("xxx").Eq(1)),
+			s:       NewSelector[TestModel](db).Where(C("xxx").EQ(1)),
 			wantErr: errs.NewErrUnKnownField("xxx"),
 		},
 		{
 			name:    "query err",
-			s:       NewSelector[TestModel](db).Where(C("Id").Eq(1)),
+			s:       NewSelector[TestModel](db).Where(C("Id").EQ(1)),
 			wantErr: errors.New("query error"),
 		},
 		{
 			name:    "no rows",
-			s:       NewSelector[TestModel](db).Where(C("Id").Eq(1)),
+			s:       NewSelector[TestModel](db).Where(C("Id").EQ(1)),
 			wantErr: ErrNoRows,
 		},
 		{
 			name: "data",
-			s:    NewSelector[TestModel](db).Where(C("Id").Eq(1)),
+			s:    NewSelector[TestModel](db).Where(C("Id").EQ(1)),
 			wantRes: &TestModel{
 				Id:        1,
 				FirstName: "Tom",

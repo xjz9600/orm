@@ -2,16 +2,14 @@ package orm
 
 import (
 	"orm/internal/errs"
-	"orm/model"
 	"strings"
 )
 
 type builder struct {
-	sb        strings.Builder
-	args      []any
-	Model     *model.Model
-	tableName string
-	db        *DB
+	sb   strings.Builder
+	args []any
+	sess Session
+	core
 }
 
 func (b *builder) buildGroupBy(ex []Column) error {
@@ -36,22 +34,44 @@ func (b *builder) buildPredicates(ps []Predicate) error {
 }
 
 func (b *builder) quote(name string) {
-	b.sb.WriteByte(b.db.dialect.quoter())
+	b.sb.WriteByte(b.dialect.quoter())
 	b.sb.WriteString(name)
-	b.sb.WriteByte(b.db.dialect.quoter())
+	b.sb.WriteByte(b.dialect.quoter())
 }
 
 func (b *builder) buildColumn(exp Column) error {
-	if _, ok := b.Model.Fields[exp.name]; !ok {
-		return errs.NewErrUnKnownField(exp.name)
+	switch col := exp.table.(type) {
+	case nil:
+		if _, ok := b.Model.Fields[exp.name]; !ok {
+			return errs.NewErrUnKnownField(exp.name)
+		}
+		b.quote(b.Model.Fields[exp.name].ColName)
+		if len(exp.alias) != 0 {
+			b.sb.WriteString(" AS ")
+			b.quote(exp.alias)
+		}
+		return nil
+	case Table:
+		m, err := b.r.Get(col.entity)
+		if err != nil {
+			return err
+		}
+		if _, ok := m.Fields[exp.name]; !ok {
+			return errs.NewErrUnKnownField(exp.name)
+		}
+		if col.alias != "" {
+			b.quote(col.alias)
+			b.sb.WriteByte('.')
+		}
+		b.quote(m.Fields[exp.name].ColName)
+		if len(exp.alias) != 0 {
+			b.sb.WriteString(" AS ")
+			b.quote(exp.alias)
+		}
+		return nil
+	default:
+		return errs.NewErrUnSupportedTable(col)
 	}
-	b.quote(b.Model.Fields[exp.name].ColName)
-	if len(exp.alias) != 0 {
-		b.sb.WriteString(" AS `")
-		b.sb.WriteString(exp.alias)
-		b.sb.WriteByte('`')
-	}
-	return nil
 }
 
 func (b *builder) buildOrderBy(order OrderBy) error {

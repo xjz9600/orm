@@ -24,6 +24,10 @@ func NewErrUnKnownField(fd string) error {
 	return fmt.Errorf("orm: 未知字段 %s", fd)
 }
 
+func NewErrFailedToRollBackTx(bizErr, rbErr error, paincked bool) error {
+	return fmt.Errorf("orm: 事务闭包回滚失败，业务错误：%v，回滚错误：%v，是否 painc：%t", bizErr, rbErr, paincked)
+}
+
 func NewErrUnKnownColumn(fd string) error {
 	return fmt.Errorf("orm: 未知列 %s", fd)
 }
@@ -34,4 +38,8 @@ func NewErrInvalidTagContent(tag string) error {
 
 func NewErrUnSupportAssignable(expr any) error {
 	return fmt.Errorf("orm: 不支持的赋值表达式类型: %v", expr)
+}
+
+func NewErrUnSupportedTable(expr any) error {
+	return fmt.Errorf("orm: 不支持的TableReference类型: %v", expr)
 }

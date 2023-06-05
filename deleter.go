@@ -2,7 +2,8 @@ package orm
 
 type Deleter[T any] struct {
 	builder
-	where []Predicate
+	where     []Predicate
+	tableName string
 }
 
 func (s *Deleter[T]) Build() (*Query, error) {
@@ -11,7 +12,7 @@ func (s *Deleter[T]) Build() (*Query, error) {
 		t   T
 		err error
 	)
-	s.Model, err = s.db.r.Get(&t)
+	s.Model, err = s.r.Get(&t)
 	if err != nil {
 		return nil, err
 	}
@@ -46,8 +47,9 @@ func (s *Deleter[T]) From(tableName string) *Deleter[T] {
 	return s
 }
 
-func NewDeleter[T any](db *DB) *Deleter[T] {
+func NewDeleter[T any](sess Session) *Deleter[T] {
+	core := sess.getCore()
 	return &Deleter[T]{
-		builder: builder{db: db},
+		builder: builder{sess: sess, core: core},
 	}
 }

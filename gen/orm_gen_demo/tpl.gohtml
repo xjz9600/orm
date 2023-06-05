@@ -1,0 +1,25 @@
+package {{.Package}}
+
+import (
+    "orm"
+    {{- range $idx,$import := .Imports}}
+    {{$import}}
+    {{- end}}
+)
+{{$ops := .Ops}}
+const (
+{{- range $idx,$type := .Types}}
+{{- range $jdx,$field := $type.Fields}}
+   {{$type.Name}}{{$field.Name}} = "{{$field.Name}}"
+{{- end}}
+{{- end}}
+)
+{{range $idx,$type := .Types}}
+{{- range $jdx,$field := $type.Fields}}
+{{- range $kdx,$op := $ops}}
+func {{$type.Name}}{{$field.Name}}{{$op}}(val {{$field.Type}}) orm.Predicate {
+    return orm.C("{{$field.Name}}").{{$op}}(val)
+}
+{{end}}
+{{- end}}
+{{- end}}

@@ -2,6 +2,7 @@ package orm
 
 import (
 	"context"
+	"orm/internal/errs"
 )
 
 type Selectable interface {
@@ -17,27 +18,19 @@ type Selector[T any] struct {
 	orderBy []OrderBy
 	offset  int
 	limit   int
+	table   TableReference
 }
 
 func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
-	q, err := s.Build()
-	if err != nil {
-		return nil, err
+	res := get[T](ctx, s.sess, s.core, &QueryContext{
+		Type:    "SELECT",
+		Builder: s,
+		Model:   s.Model,
+	})
+	if res.Result != nil {
+		return res.Result.(*T), res.Err
 	}
-	rows, err := s.db.db.QueryContext(ctx, q.SQL, q.Args...)
-	if err != nil {
-		return nil, err
-	}
-	if !rows.Next() {
-		return nil, ErrNoRows
-	}
-	tp := new(T)
-	val := s.db.creator(s.Model, tp)
-	err = val.SetColumns(rows)
-	if err != nil {
-		return nil, err
-	}
-	return tp, err
+	return nil, res.Err
 }
 
 func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
@@ -45,9 +38,10 @@ func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
 	panic("implement me")
 }
 
-func NewSelector[T any](db *DB) *Selector[T] {
+func NewSelector[T any](sess Session) *Selector[T] {
+	core := sess.getCore()
 	return &Selector[T]{
-		builder: builder{db: db},
+		builder: builder{sess: sess, core: core},
 	}
 }
 
@@ -88,26 +82,32 @@ func (s *Selector[T]) buildColumns() error {
 }
 
 func (s *Selector[T]) Build() (*Query, error) {
-	var (
-		t   T
-		err error
-	)
-	s.Model, err = s.db.r.Get(&t)
-	if err != nil {
-		return nil, err
+	if s.Model == nil {
+		var (
+			t   T
+			err error
+		)
+		s.Model, err = s.r.Get(&t)
+		if err != nil {
+			return nil, err
+		}
 	}
+	s.sb.Reset()
 	s.sb.WriteString("SELECT ")
-	err = s.buildColumns()
+	err := s.buildColumns()
 	if err != nil {
 		return nil, err
 	}
 	s.sb.WriteString(" FROM ")
-	if len(s.tableName) != 0 {
-		s.sb.WriteString(s.tableName)
-	} else {
-		s.sb.WriteByte('`')
-		s.sb.WriteString(s.Model.TableName)
-		s.sb.WriteByte('`')
+	//if len(s.tableName) != 0 {
+	//	s.sb.WriteString(s.tableName)
+	//} else {
+	//	s.sb.WriteByte('`')
+	//	s.sb.WriteString(s.Model.TableName)
+	//	s.sb.WriteByte('`')
+	//}
+	if err := s.buildTable(s.table); err != nil {
+		return nil, err
 	}
 	if len(s.where) > 0 {
 		s.sb.WriteString(" WHERE ")
@@ -158,6 +158,60 @@ func (s *Selector[T]) Build() (*Query, error) {
 	}, nil
 }
 
+func (s *Selector[T]) buildTable(table TableReference) error {
+	switch t := table.(type) {
+	case nil:
+		s.quote(s.Model.TableName)
+	case Table:
+		m, err := s.r.Get(t.entity)
+		if err != nil {
+			return err
+		}
+		s.quote(m.TableName)
+		if t.alias != "" {
+			s.sb.WriteString(" AS ")
+			s.quote(t.alias)
+		}
+	case Join:
+		s.sb.WriteByte('(')
+		err := s.buildTable(t.left)
+		if err != nil {
+			return err
+		}
+		s.sb.WriteByte(' ')
+		s.sb.WriteString(t.typ)
+		s.sb.WriteByte(' ')
+		err = s.buildTable(t.right)
+		if err != nil {
+			return err
+		}
+		if len(t.using) > 0 {
+			s.sb.WriteString(" USING (")
+			for i, u := range t.using {
+				if i > 0 {
+					s.sb.WriteByte(',')
+				}
+				err = s.buildColumn(Column{name: u})
+				if err != nil {
+					return err
+				}
+			}
+			s.sb.WriteByte(')')
+		}
+		if len(t.on) > 0 {
+			s.sb.WriteString(" ON ")
+			err = s.buildPredicates(t.on)
+			if err != nil {
+				return err
+			}
+		}
+		s.sb.WriteByte(')')
+	default:
+		return errs.NewErrUnSupportedTable(t)
+	}
+	return nil
+}
+
 func (s *Selector[T]) Where(ps ...Predicate) *Selector[T] {
 	s.where = ps
 	return s
@@ -188,8 +242,8 @@ func (s *Selector[T]) Select(cols ...Selectable) *Selector[T] {
 	return s
 }
 
-func (s *Selector[T]) From(tableName string) *Selector[T] {
-	s.tableName = tableName
+func (s *Selector[T]) From(table TableReference) *Selector[T] {
+	s.table = table
 	return s
 }
 

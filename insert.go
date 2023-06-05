@@ -2,7 +2,6 @@ package orm
 
 import (
 	"context"
-	"fmt"
 	"orm/internal/errs"
 	"orm/model"
 )
@@ -45,11 +44,13 @@ type Inserter[T any] struct {
 	builder
 	columns        []string
 	onDuplicateKey *Upsert
+	tableName      string
 }
 
-func NewInserter[T any](db *DB) *Inserter[T] {
+func NewInserter[T any](sess Session) *Inserter[T] {
+	core := sess.getCore()
 	return &Inserter[T]{
-		builder: builder{db: db},
+		builder: builder{sess: sess, core: core},
 	}
 }
 
@@ -68,10 +69,12 @@ func (i *Inserter[T]) Build() (*Query, error) {
 		return nil, errs.ErrInsertZeroRow
 	}
 	i.sb.WriteString("INSERT INTO ")
-	var err error
-	i.Model, err = i.db.r.Get(i.val[0])
-	if err != nil {
-		return nil, err
+	if i.Model == nil {
+		var err error
+		i.Model, err = i.r.Get(i.val[0])
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(i.tableName) != 0 {
 		i.sb.WriteString(i.tableName)
@@ -103,7 +106,7 @@ func (i *Inserter[T]) Build() (*Query, error) {
 			i.sb.WriteByte(',')
 		}
 		i.sb.WriteByte('(')
-		val := i.db.creator(i.Model, v)
+		val := i.creator(i.Model, v)
 		for index, field := range fields {
 			if index > 0 {
 				i.sb.WriteByte(',')
@@ -118,13 +121,12 @@ func (i *Inserter[T]) Build() (*Query, error) {
 		i.sb.WriteByte(')')
 	}
 	if i.onDuplicateKey != nil {
-		err = i.db.dialect.buildUpsert(&i.builder, i.onDuplicateKey)
+		err := i.dialect.buildUpsert(&i.builder, i.onDuplicateKey)
 		if err != nil {
 			return nil, err
 		}
 	}
 	i.sb.WriteByte(';')
-	fmt.Println(i.sb.String())
 	return &Query{
 		SQL:  i.sb.String(),
 		Args: i.args,
@@ -137,15 +139,15 @@ func (i *Inserter[T]) From(tableName string) *Inserter[T] {
 }
 
 func (i *Inserter[T]) Exec(ctx context.Context) Result {
-	q, err := i.Build()
-	if err != nil {
-		return Result{
-			err: err,
-		}
+	res := exec[T](ctx, i.sess, i.core, &QueryContext{
+		Type:    "INSERT",
+		Builder: i,
+		Model:   i.Model,
+	})
+	if res.Result != nil {
+		return res.Result.(Result)
 	}
-	res, err := i.db.db.Exec(q.SQL, q.Args...)
 	return Result{
-		err: err,
-		res: res,
+		err: res.Err,
 	}
 }
