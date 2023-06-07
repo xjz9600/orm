@@ -118,3 +118,51 @@ func (j Join) RightJoin(right TableReference) *JoinBuilder {
 		typ:   "RIGHT JOIN",
 	}
 }
+
+type SubQuery struct {
+	s       QueryBuilder
+	alias   string
+	tbl     TableReference
+	columns []Selectable
+}
+
+func (s SubQuery) C(name string) Column {
+	return Column{
+		name:  name,
+		table: s,
+	}
+}
+
+func (t SubQuery) Join(right TableReference) *JoinBuilder {
+	return &JoinBuilder{
+		left:  t,
+		right: right,
+		typ:   "JOIN",
+	}
+}
+
+func (t SubQuery) LeftJoin(right TableReference) *JoinBuilder {
+	return &JoinBuilder{
+		left:  t,
+		right: right,
+		typ:   "LEFT JOIN",
+	}
+}
+
+func (t SubQuery) RightJoin(right TableReference) *JoinBuilder {
+	return &JoinBuilder{
+		left:  t,
+		right: right,
+		typ:   "RIGHT JOIN",
+	}
+}
+
+func (s SubQuery) expr() {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s SubQuery) table() {
+	//TODO implement me
+	panic("implement me")
+}

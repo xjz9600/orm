@@ -6,7 +6,13 @@ type Aggregate struct {
 	alias string
 }
 
-func (a Aggregate) selectable() {}
+func (a Aggregate) selectedAlias() string {
+	return a.alias
+}
+
+func (a Aggregate) fieldName() string {
+	return a.arg
+}
 
 func (a Aggregate) As(alias string) Aggregate {
 	return Aggregate{

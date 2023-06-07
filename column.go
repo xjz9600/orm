@@ -10,8 +10,11 @@ func (c Column) assign() {
 
 }
 
-func (c Column) selectable() {
-
+func (c Column) selectedAlias() string {
+	return c.alias
+}
+func (c Column) fieldName() string {
+	return c.name
 }
 
 func (c Column) expr() {
@@ -34,6 +37,14 @@ func (c Column) EQ(val any) Predicate {
 	return Predicate{
 		left:  c,
 		op:    opEq,
+		right: valueOf(val),
+	}
+}
+
+func (c Column) InQuery(val any) Predicate {
+	return Predicate{
+		left:  c,
+		op:    opIN,
 		right: valueOf(val),
 	}
 }

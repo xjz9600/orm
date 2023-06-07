@@ -6,7 +6,8 @@ import (
 )
 
 type Selectable interface {
-	selectable()
+	selectedAlias() string
+	fieldName() string
 }
 
 type Selector[T any] struct {
@@ -99,13 +100,6 @@ func (s *Selector[T]) Build() (*Query, error) {
 		return nil, err
 	}
 	s.sb.WriteString(" FROM ")
-	//if len(s.tableName) != 0 {
-	//	s.sb.WriteString(s.tableName)
-	//} else {
-	//	s.sb.WriteByte('`')
-	//	s.sb.WriteString(s.Model.TableName)
-	//	s.sb.WriteByte('`')
-	//}
 	if err := s.buildTable(s.table); err != nil {
 		return nil, err
 	}
@@ -206,6 +200,8 @@ func (s *Selector[T]) buildTable(table TableReference) error {
 			}
 		}
 		s.sb.WriteByte(')')
+	case SubQuery:
+		return s.buildSubQuery(t)
 	default:
 		return errs.NewErrUnSupportedTable(t)
 	}
@@ -249,6 +245,23 @@ func (s *Selector[T]) From(table TableReference) *Selector[T] {
 
 func (s *Selector[T]) Having(ps ...Predicate) *Selector[T] {
 	s.having = ps
+	return s
+}
+
+func (s *Selector[T]) AsSubQuery() SubQuery {
+	var tbl = s.table
+	if tbl == nil {
+		tbl = TableOf(new(T))
+	}
+	return SubQuery{
+		s:       s,
+		tbl:     tbl,
+		columns: s.columns,
+	}
+}
+
+func (s SubQuery) As(alias string) SubQuery {
+	s.alias = alias
 	return s
 }
 

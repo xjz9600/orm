@@ -21,8 +21,12 @@ func (r RawExpr) AsPredicate() Predicate {
 	}
 }
 
-func (r RawExpr) selectable() {
+func (r RawExpr) selectedAlias() string {
+	return ""
+}
 
+func (r RawExpr) fieldName() string {
+	return ""
 }
 
 func Raw(expr string, args ...any) RawExpr {
@@ -30,4 +34,36 @@ func Raw(expr string, args ...any) RawExpr {
 		raw:  expr,
 		args: args,
 	}
+}
+
+type SubqueryExpr struct {
+	s SubQuery
+	// 谓词，ALL，ANY 或者 SOME
+	pred string
+}
+
+func Any(sub SubQuery) SubqueryExpr {
+	return SubqueryExpr{
+		s:    sub,
+		pred: "ANY",
+	}
+}
+
+func All(sub SubQuery) SubqueryExpr {
+	return SubqueryExpr{
+		s:    sub,
+		pred: "ALL",
+	}
+}
+
+func Some(sub SubQuery) SubqueryExpr {
+	return SubqueryExpr{
+		s:    sub,
+		pred: "SOME",
+	}
+}
+
+func (r SubqueryExpr) expr() {
+	//TODO implement me
+	panic("implement me")
 }

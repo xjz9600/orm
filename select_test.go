@@ -472,3 +472,217 @@ CREATE TABLE IF NOT EXISTS test_model(
 )
 `
 }
+
+func TestSelector_Subquery(t *testing.T) {
+	db := memoryDB(t)
+	type Order struct {
+		Id        int
+		UsingCol1 string
+		UsingCol2 string
+	}
+
+	type OrderDetail struct {
+		OrderId int
+		ItemId  int
+	}
+
+	testCases := []struct {
+		name      string
+		q         QueryBuilder
+		wantQuery *Query
+		wantErr   error
+	}{
+		{
+			name: "from",
+			q: func() QueryBuilder {
+				sub := NewSelector[OrderDetail](db).AsSubQuery().As("sub")
+				return NewSelector[Order](db).From(sub)
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM (SELECT * FROM `order_detail`) AS `sub`;",
+			},
+		},
+		{
+			name: "in",
+			q: func() QueryBuilder {
+				sub := NewSelector[OrderDetail](db).Select(C("OrderId")).AsSubQuery()
+				return NewSelector[Order](db).Where(C("Id").InQuery(sub))
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM `order` WHERE `id` IN (SELECT `order_id` FROM `order_detail`);",
+			},
+		},
+		{
+			name: "exist",
+			q: func() QueryBuilder {
+				sub := NewSelector[OrderDetail](db).Select(C("OrderId")).AsSubQuery()
+				return NewSelector[Order](db).Where(Exist(sub))
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM `order` WHERE  EXIST (SELECT `order_id` FROM `order_detail`);",
+			},
+		},
+		{
+			name: "not exist",
+			q: func() QueryBuilder {
+				sub := NewSelector[OrderDetail](db).Select(C("OrderId")).AsSubQuery()
+				return NewSelector[Order](db).Where(Not(Exist(sub)))
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM `order` WHERE  NOT ( EXIST (SELECT `order_id` FROM `order_detail`));",
+			},
+		},
+		{
+			name: "all",
+			q: func() QueryBuilder {
+				sub := NewSelector[OrderDetail](db).Select(C("OrderId")).AsSubQuery()
+				return NewSelector[Order](db).Where(C("Id").GT(All(sub)))
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM `order` WHERE `id` > ALL (SELECT `order_id` FROM `order_detail`);",
+			},
+		},
+		{
+			name: "some and any",
+			q: func() QueryBuilder {
+				sub := NewSelector[OrderDetail](db).Select(C("OrderId")).AsSubQuery()
+				return NewSelector[Order](db).Where(C("Id").GT(Some(sub)), C("Id").LT(Any(sub)))
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM `order` WHERE (`id` > SOME (SELECT `order_id` FROM `order_detail`)) AND (`id` < ANY (SELECT `order_id` FROM `order_detail`));",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			query, err := tc.q.Build()
+			assert.Equal(t, tc.wantErr, err)
+			if err != nil {
+				return
+			}
+			assert.Equal(t, tc.wantQuery, query)
+		})
+	}
+}
+
+func TestSelector_SubQueryAndJoin(t *testing.T) {
+	db := memoryDB(t)
+
+	type Order struct {
+		Id        int
+		UsingCol1 string
+		UsingCol2 string
+	}
+
+	type OrderDetail struct {
+		OrderId int
+		ItemId  int
+
+		UsingCol1 string
+		UsingCol2 string
+	}
+
+	type Item struct {
+		Id int
+	}
+
+	testCases := []struct {
+		name      string
+		q         QueryBuilder
+		wantQuery *Query
+		wantErr   error
+	}{
+		{
+			// 虽然泛型是 Order，但是我们传入 OrderDetail
+			name: "table and join",
+			q: func() QueryBuilder {
+				t1 := TableOf(&Order{})
+				sub := NewSelector[OrderDetail](db).AsSubQuery().As("sub")
+				return NewSelector[Order](db).Select(sub.C("ItemId")).From(t1.Join(sub).On(t1.C("Id").EQ(sub.C("OrderId")))).Where()
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT `sub`.`item_id` FROM (`order` JOIN (SELECT * FROM `order_detail`) AS `sub` ON `id` = `sub`.`order_id`);",
+			},
+		},
+		{
+			name: "table and left join",
+			q: func() QueryBuilder {
+				t1 := TableOf(&Order{})
+				sub := NewSelector[OrderDetail](db).AsSubQuery().As("sub")
+				return NewSelector[Order](db).From(sub.Join(t1).On(t1.C("Id").EQ(sub.C("OrderId")))).Where()
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM ((SELECT * FROM `order_detail`) AS `sub` JOIN `order` ON `id` = `sub`.`order_id`);",
+			},
+		},
+		{
+			name: "join and join",
+			q: func() QueryBuilder {
+				sub1 := NewSelector[OrderDetail](db).AsSubQuery().As("sub1")
+				sub2 := NewSelector[OrderDetail](db).AsSubQuery().As("sub2")
+				return NewSelector[Order](db).From(sub1.RightJoin(sub2).Using("Id")).Where()
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM ((SELECT * FROM `order_detail`) AS `sub1` RIGHT JOIN (SELECT * FROM `order_detail`) AS `sub2` USING (`id`));",
+			},
+		},
+		{
+			name: "join sub sub",
+			q: func() QueryBuilder {
+				sub1 := NewSelector[OrderDetail](db).AsSubQuery().As("sub1")
+				sub2 := NewSelector[OrderDetail](db).From(sub1).AsSubQuery().As("sub2")
+				t1 := TableOf(&Order{}).As("o1")
+				return NewSelector[Order](db).From(sub2.Join(t1).Using("Id")).Where()
+			}(),
+			wantQuery: &Query{
+				SQL: "SELECT * FROM ((SELECT * FROM (SELECT * FROM `order_detail`) AS `sub1`) AS `sub2` JOIN `order` AS `o1` USING (`id`));",
+			},
+		},
+		{
+			name: "invalid field",
+			q: func() QueryBuilder {
+				t1 := TableOf(&Order{})
+				sub := NewSelector[OrderDetail](db).AsSubQuery().As("sub")
+				return NewSelector[Order](db).Select(sub.C("Invalid")).From(t1.Join(sub).On(t1.C("Id").EQ(sub.C("OrderId")))).Where()
+			}(),
+			wantErr: errs.NewErrUnKnownField("Invalid"),
+		},
+		{
+			name: "invalid field in predicates",
+			q: func() QueryBuilder {
+				t1 := TableOf(&Order{})
+				sub := NewSelector[OrderDetail](db).AsSubQuery().As("sub")
+				return NewSelector[Order](db).Select(sub.C("ItemId")).From(t1.Join(sub).On(t1.C("Id").EQ(sub.C("Invalid")))).Where()
+			}(),
+			wantErr: errs.NewErrUnKnownField("Invalid"),
+		},
+		{
+			name: "invalid field in aggregate function",
+			q: func() QueryBuilder {
+				t1 := TableOf(&Order{})
+				sub := NewSelector[OrderDetail](db).AsSubQuery().As("sub")
+				return NewSelector[Order](db).Select(Max("Invalid")).From(t1.Join(sub).On(t1.C("Id").EQ(sub.C("OrderId")))).Where()
+			}(),
+			wantErr: errs.NewErrUnKnownField("Invalid"),
+		},
+		{
+			name: "not selected",
+			q: func() QueryBuilder {
+				t1 := TableOf(&Order{})
+				sub := NewSelector[OrderDetail](db).Select(C("OrderId")).AsSubQuery().As("sub")
+				return NewSelector[Order](db).Select(sub.C("ItemId")).From(t1.Join(sub).On(t1.C("Id").EQ(sub.C("OrderId")))).Where()
+			}(),
+			wantErr: errs.NewErrUnKnownField("ItemId"),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			query, err := tc.q.Build()
+			assert.Equal(t, tc.wantErr, err)
+			if err != nil {
+				return
+			}
+			assert.Equal(t, tc.wantQuery, query)
+		})
+	}
+}

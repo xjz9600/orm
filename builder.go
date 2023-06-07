@@ -39,38 +39,76 @@ func (b *builder) quote(name string) {
 	b.sb.WriteByte(b.dialect.quoter())
 }
 
-func (b *builder) buildColumn(exp Column) error {
-	switch col := exp.table.(type) {
+func (b *builder) buildColumn(col Column) error {
+	switch table := col.table.(type) {
 	case nil:
-		if _, ok := b.Model.Fields[exp.name]; !ok {
-			return errs.NewErrUnKnownField(exp.name)
+		if _, ok := b.Model.Fields[col.name]; !ok {
+			return errs.NewErrUnKnownField(col.name)
 		}
-		b.quote(b.Model.Fields[exp.name].ColName)
-		if len(exp.alias) != 0 {
+		b.quote(b.Model.Fields[col.name].ColName)
+		if len(col.alias) != 0 {
 			b.sb.WriteString(" AS ")
-			b.quote(exp.alias)
+			b.quote(col.alias)
 		}
 		return nil
 	case Table:
-		m, err := b.r.Get(col.entity)
+		m, err := b.r.Get(table.entity)
 		if err != nil {
 			return err
 		}
-		if _, ok := m.Fields[exp.name]; !ok {
-			return errs.NewErrUnKnownField(exp.name)
+		if _, ok := m.Fields[col.name]; !ok {
+			return errs.NewErrUnKnownField(col.name)
 		}
-		if col.alias != "" {
-			b.quote(col.alias)
+		if table.alias != "" {
+			b.quote(table.alias)
 			b.sb.WriteByte('.')
 		}
-		b.quote(m.Fields[exp.name].ColName)
-		if len(exp.alias) != 0 {
+		b.quote(m.Fields[col.name].ColName)
+		if len(col.alias) != 0 {
 			b.sb.WriteString(" AS ")
-			b.quote(exp.alias)
+			b.quote(col.alias)
 		}
 		return nil
+	case SubQuery:
+		if len(table.columns) > 0 {
+			for _, c := range table.columns {
+				if c.selectedAlias() == col.name {
+					if table.alias != "" {
+						b.quote(table.alias)
+						b.sb.WriteByte('.')
+					}
+					b.quote(col.name)
+					if len(col.alias) != 0 {
+						b.sb.WriteString(" AS ")
+						b.quote(col.alias)
+					}
+					return nil
+				}
+				if c.fieldName() == col.name {
+					if table.alias != "" {
+						b.quote(table.alias)
+						b.sb.WriteByte('.')
+					}
+					return b.buildColumn(Column{
+						table: col.table,
+						name:  col.name,
+						alias: col.alias,
+					})
+				}
+			}
+			return errs.NewErrUnKnownField(col.name)
+		}
+		if table.alias != "" {
+			b.quote(table.alias)
+			b.sb.WriteByte('.')
+		}
+		return b.buildColumn(Column{
+			table: table.tbl,
+			name:  col.name,
+			alias: col.alias,
+		})
 	default:
-		return errs.NewErrUnSupportedTable(col)
+		return errs.NewErrUnSupportedTable(table)
 	}
 }
 
@@ -135,6 +173,12 @@ func (b *builder) buildExpression(exp Expression) error {
 			return err
 		}
 		b.sb.WriteByte(')')
+	case SubQuery:
+		b.buildSubQuery(expr)
+	case SubqueryExpr:
+		b.sb.WriteString(expr.pred)
+		b.sb.WriteByte(' ')
+		b.buildSubQuery(expr.s)
 	default:
 		return errs.NewErrUnSupportExpression(expr)
 	}
@@ -150,4 +194,20 @@ func (b *builder) addArg(val ...any) {
 	}
 	b.args = append(b.args, val...)
 	return
+}
+
+func (b *builder) buildSubQuery(sub SubQuery) error {
+	query, err := sub.s.Build()
+	if err != nil {
+		return err
+	}
+	b.sb.WriteByte('(')
+	b.sb.WriteString(query.SQL[:len(query.SQL)-1])
+	b.sb.WriteByte(')')
+	if sub.alias != "" {
+		b.sb.WriteString(" AS ")
+		b.quote(sub.alias)
+	}
+	b.args = append(b.args, query.Args...)
+	return nil
 }

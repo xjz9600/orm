@@ -3,12 +3,14 @@ package orm
 type op string
 
 const (
-	opEq  op = "="
-	opNot op = "NOT"
-	opAnd op = "AND"
-	opOr  op = "OR"
-	opLT  op = "<"
-	opGT  op = ">"
+	opEq    op = "="
+	opNot   op = "NOT"
+	opAnd   op = "AND"
+	opOr    op = "OR"
+	opLT    op = "<"
+	opGT    op = ">"
+	opIN    op = "IN"
+	opExist op = "EXIST"
 )
 
 func (o op) String() string {
@@ -29,6 +31,13 @@ func Not(p Predicate) Predicate {
 	return Predicate{
 		op:    opNot,
 		right: p,
+	}
+}
+
+func Exist(sub SubQuery) Predicate {
+	return Predicate{
+		op:    opExist,
+		right: sub,
 	}
 }
 
