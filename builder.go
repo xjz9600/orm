@@ -90,7 +90,7 @@ func (b *builder) buildColumn(col Column) error {
 						b.sb.WriteByte('.')
 					}
 					return b.buildColumn(Column{
-						table: col.table,
+						table: table.tbl,
 						name:  col.name,
 						alias: col.alias,
 					})
