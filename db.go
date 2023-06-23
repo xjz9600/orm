@@ -70,6 +70,7 @@ func (db *DB) getCore() core {
 
 func (db *DB) DoTx(ctx context.Context, fn func(ctx context.Context, tx *Tx) error, opts *sql.TxOptions) (err error) {
 	tx, err := db.BeginTx(ctx, opts)
+	context.WithCancel(context.Background())
 	if err != nil {
 		return err
 	}
