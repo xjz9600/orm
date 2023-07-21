@@ -1,26 +1,33 @@
 package net
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"time"
 )
 
 func TestConnect(t *testing.T) {
-	type args struct {
-		network string
-		addr    string
+	go func() {
+		err := Serve("tcp", ":8082")
+		t.Log(err)
+	}()
+	time.Sleep(time.Second * 3)
+	err := Connect("tcp", "localhost:8082")
+	t.Log(err)
+}
+
+func TestSend(t *testing.T) {
+	server := &Server{}
+	go func() {
+		err := server.Start("tcp", ":8083")
+		t.Log(err)
+	}()
+	time.Sleep(time.Second * 3)
+	client := &Client{
+		network: "tcp",
+		addr:    "localhost:8083",
 	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr assert.ErrorAssertionFunc
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.wantErr(t, Connect(tt.args.network, tt.args.addr), fmt.Sprintf("Connect(%v, %v)", tt.args.network, tt.args.addr))
-		})
-	}
+	resp, err := client.Send("Hello")
+	assert.NoError(t, err)
+	assert.Equal(t, resp, "HelloHello")
 }

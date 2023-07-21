@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+
 	s1 := app.NewServer("business", "localhost:8080")
 	s1.Handle("/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		_, _ = writer.Write([]byte("hello"))
